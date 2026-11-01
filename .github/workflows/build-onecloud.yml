@@ -1,0 +1,53 @@
+name: Build Onecloud Burn Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release'
+        default: 'trixie'
+        required: true
+      minimal:
+        description: 'Minimal (yes/no)'
+        default: 'yes'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Build
+        env:
+          CI: "true"
+        run: |
+          sudo ./compile.sh docker \
+            BOARD=onecloud \
+            RELEASE=${{ inputs.release }} \
+            BUILD_DESKTOP=no \
+            BUILD_MINIMAL=${{ inputs.minimal }} \
+            KERNEL_CONFIGURE=no
+
+      - name: Upload burn image
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecloud-${{ inputs.release }}-burn
+          path: output/images/*.burn.img
+          retention-days: 30
+          if-no-files-found: error
