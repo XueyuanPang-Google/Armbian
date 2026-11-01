@@ -18,27 +18,24 @@ jobs:
     timeout-minutes: 350
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/local/share/boost
+          sudo apt-get clean
+          df -h /
 
       - name: Build
         env:
           CI: "true"
         run: |
-          sudo ./compile.sh docker \
+          ./compile.sh docker \
             BOARD=onecloud \
+            BRANCH=current \
             RELEASE=${{ inputs.release }} \
             BUILD_DESKTOP=no \
             BUILD_MINIMAL=${{ inputs.minimal }} \
