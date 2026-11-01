@@ -12,6 +12,9 @@ on:
         default: 'yes'
         required: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -81,12 +84,37 @@ jobs:
           printf 'PARTITION:boot:sparse:boot.simg\nVERIFY:boot:normal:boot.VERIFY\nPARTITION:rootfs:sparse:rootfs.simg\nVERIFY:rootfs:normal:rootfs.VERIFY\n' >> burn/commands.txt
           prefix=$(ls output/images/*.img | head -1 | sed 's/\.img$//')
           ./AmlImg pack "${prefix}.burn.img" burn/
-          ls -lh output/images/
+          ls -lh output/images/*.burn.img
+
+      - name: Compress for release
+        run: |
+          cd output/images
+          for f in *.burn.img; do
+            xz -T0 -6 -k "$f"
+          done
+          ls -lh
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: burn-${{ inputs.release }}-min${{ inputs.minimal }}-${{ github.run_number }}
+          name: Onecloud ${{ inputs.release }} (minimal=${{ inputs.minimal }}) #${{ github.run_number }}
+          body: |
+            Amlogic burn 线刷包（u-boot + 系统完整 aml_upgrade_package）
+            release=${{ inputs.release }}  minimal=${{ inputs.minimal }}
+            内核分支：current
+            构建时间：${{ github.event.repository.updated_at }}
+          files: |
+            output/images/*.burn.img.xz
+            output/images/*.burn.img
+          prerelease: true
+          fail_on_unmatched_files: true
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: onecloud-${{ inputs.release }}-burn
-          path: output/images/*.burn.img
+          path: output/images/*.burn.img*
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
