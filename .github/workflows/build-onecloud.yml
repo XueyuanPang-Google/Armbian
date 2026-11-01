@@ -4,48 +4,86 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'Release'
+        description: 'Release (trixie / bookworm / noble)'
         default: 'trixie'
         required: true
       minimal:
-        description: 'Minimal (yes/no)'
+        description: 'Minimal (yes / no)'
         default: 'yes'
         required: true
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 350
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache /usr/local/share/boost
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           sudo apt-get clean
           df -h /
 
-      - name: Build
+      - name: Checkout armbian/build
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          ref: main
+
+      - name: Build image
         env:
           CI: "true"
         run: |
-          sudo -E ./compile.sh \
+          export GITHUB_ACTIONS=false
+          sudo --preserve-env ./compile.sh build \
+            ALLOW_ROOT=yes \
             BOARD=onecloud \
             BRANCH=current \
             RELEASE=${{ inputs.release }} \
-            BUILD_DESKTOP=no \
+            KERNEL_CONFIGURE=no \
             BUILD_MINIMAL=${{ inputs.minimal }} \
-            KERNEL_CONFIGURE=no
+            BUILD_DESKTOP=no \
+            EXPERT=yes \
+            SKIP_EXTERNAL_TOOLCHAINS=yes \
+            CLEAN_LEVEL= \
+            USE_CCACHE=no \
+            COMPRESS_OUTPUTIMAGE=img
+          sudo chown "$(id -u):$(id -g)" -R output/
+          ls -lh output/images/
 
-      - name: List artifacts
-        if: always()
-        run: ls -lhR output/images/ 2>/dev/null || echo "(no output/images)"
+      - name: Install AmlImg and img2simg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y android-sdk-libsparse-utils || sudo apt-get install -y img2simg
+          curl -L -o ./AmlImg https://github.com/hzyitc/AmlImg/releases/download/v0.3.1/AmlImg_v0.3.1_linux_amd64
+          chmod +x ./AmlImg
 
-      - name: Upload burn image
+      - name: Download and unpack u-boot burn image
+        run: |
+          curl -L -o ./uboot.img https://github.com/hzyitc/u-boot-onecloud/releases/latest/download/eMMC.burn.img
+          ./AmlImg unpack ./uboot.img burn/
+          ls -l burn/
+
+      - name: Convert boot and rootfs to sparse
+        run: |
+          diskimg=$(ls output/images/*.img | head -1)
+          echo "using $diskimg"
+          loop=$(sudo losetup --find --show --partscan "$diskimg")
+          echo "loop=$loop"
+          sudo img2simg "${loop}p1" burn/boot.simg
+          sudo img2simg "${loop}p2" burn/rootfs.simg
+          sudo losetup -d "$loop"
+          sudo chown "$(id -u):$(id -g)" -R burn/
+
+      - name: Generate burn image
+        run: |
+          echo -n "sha1sum $(sha1sum burn/boot.simg | awk '{print $1}')" > burn/boot.VERIFY
+          echo -n "sha1sum $(sha1sum burn/rootfs.simg | awk '{print $1}')" > burn/rootfs.VERIFY
+          printf 'PARTITION:boot:sparse:boot.simg\nVERIFY:boot:normal:boot.VERIFY\nPARTITION:rootfs:sparse:rootfs.simg\nVERIFY:rootfs:normal:rootfs.VERIFY\n' >> burn/commands.txt
+          prefix=$(ls output/images/*.img | head -1 | sed 's/\.img$//')
+          ./AmlImg pack "${prefix}.burn.img" burn/
+          ls -lh output/images/
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: onecloud-${{ inputs.release }}-burn
