@@ -63,8 +63,13 @@ jobs:
       - name: Download and unpack u-boot burn image
         run: |
           curl -L -o ./uboot.img https://github.com/hzyitc/u-boot-onecloud/releases/latest/download/eMMC.burn.img
+          rm -rf burn && mkdir -p burn
           ./AmlImg unpack ./uboot.img burn/
           ls -l burn/
+          # 关掉"刷前擦除 bootloader"：擦除瞬间的浪涌电流会触发 USB 过流保护(0x00101004)。
+          # 包里本来就带 bootloader.PARTITION，写一遍等于覆盖，不需要先擦。
+          sed -i 's/^erase_bootloader.*/erase_bootloader    = 0/' burn/aml_sdc_burn.ini
+          echo "--- ini after patch ---"; cat burn/aml_sdc_burn.ini
 
       - name: Convert boot and rootfs to sparse
         run: |
@@ -76,22 +81,32 @@ jobs:
           sudo img2simg "${loop}p2" burn/rootfs.simg
           sudo losetup -d "$loop"
           sudo chown "$(id -u):$(id -g)" -R burn/
+          ls -l burn/*.simg
 
       - name: Generate burn image
         run: |
           echo -n "sha1sum $(sha1sum burn/boot.simg | awk '{print $1}')" > burn/boot.VERIFY
           echo -n "sha1sum $(sha1sum burn/rootfs.simg | awk '{print $1}')" > burn/rootfs.VERIFY
           printf 'PARTITION:boot:sparse:boot.simg\nVERIFY:boot:normal:boot.VERIFY\nPARTITION:rootfs:sparse:rootfs.simg\nVERIFY:rootfs:normal:rootfs.VERIFY\n' >> burn/commands.txt
+          echo "--- commands.txt ---"; cat burn/commands.txt
           prefix=$(ls output/images/*.img | head -1 | sed 's/\.img$//')
           ./AmlImg pack "${prefix}.burn.img" burn/
           ls -lh output/images/*.burn.img
 
+      - name: Verify package
+        run: |
+          set -x
+          rm -rf verify && mkdir -p verify
+          ./AmlImg unpack "$(ls output/images/*.burn.img | head -1)" verify/
+          echo "===== commands.txt ====="; cat verify/commands.txt
+          echo "===== files ====="; ls -l verify/
+          echo "===== aml_sdc_burn.ini ====="; cat verify/aml_sdc_burn.ini
+          echo "===== rootfs sparse size ====="; stat -c '%n %s' verify/*rootfs*
+
       - name: Compress for release
         run: |
           cd output/images
-          for f in *.burn.img; do
-            xz -T0 -6 -k "$f"
-          done
+          for f in *.burn.img; do xz -T0 -6 -k "$f"; done
           ls -lh
 
       - name: Upload release
@@ -103,7 +118,7 @@ jobs:
             Amlogic burn 线刷包（u-boot + 系统完整 aml_upgrade_package）
             release=${{ inputs.release }}  minimal=${{ inputs.minimal }}
             内核分支：current
-            构建时间：${{ github.event.repository.updated_at }}
+            erase_bootloader 已置 0（避免过流保护）
           files: |
             output/images/*.burn.img.xz
             output/images/*.burn.img
