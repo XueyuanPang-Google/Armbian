@@ -15,7 +15,7 @@ UBOOT_TARGET_MAP=";;idbloader.bin uboot.img trust.bin"
 BOOTDELAY=0
 # OVERLAY_PREFIX is a space-separated list. The boot script tries each prefix in order.
 # It defaults to the SoC prefixes (see rockchip_soc_overlay_prefixes below) if not set by board.
-# Boards add their own prefixes in OVERLAY_PREFIX_BOARD; see post_family_config__910_overlay_prefix_board.
+# Boards add their own prefixes in OVERLAY_PREFIX_BOARD; see do_main_configuration in lib/functions/configuration/main-config.sh.
 OVERLAY_DIR="/boot/dtb/rockchip/overlay"
 # SERIALCON is handled/defaulted in hook post_family_config__900_late_default_serial_console_by_branch at end of this file
 GOVERNOR="ondemand"
@@ -161,7 +161,7 @@ case "$BOOT_SOC" in
 		;;
 
 	rk3566)
-		CPUMAX=${CPUMAX:="1800000"}
+		CPUMAX=${CPUMAX:="1992000"} # clamped to 1800000 unless the opp-2ghz overlay adds the 1992 MHz OPP
 		BOOT_SCENARIO="${BOOT_SCENARIO:=spl-blobs}"
 		DDR_BLOB="${DDR_BLOB:-"rk35/rk3566_ddr_1056MHz_v1.21.bin"}"
 		BL31_BLOB="${BL31_BLOB:-"rk35/rk3568_bl31_v1.44.elf"}"
@@ -392,16 +392,22 @@ write_uboot_platform_ufs() {
 	[[ $(type -t run_host_command_logged) == function ]] && logging_prelude="run_host_command_logged"
 
 	if [[ -f $1/idbloader.img && -f $1/u-boot.itb ]]; then
-		${logging_prelude} dd if=$1/idbloader.img of=$2 bs=4096 seek=8 conv=notrunc,fsync status=none
+		${logging_prelude} dd if=$1/idbloader.img of=$2 bs=4096 seek=8 conv=notrunc,fsync status=none || return 1
 		${logging_prelude} dd if=$1/u-boot.itb of=$3 bs=4096 seek=2048 conv=notrunc,fsync status=none
 	else
 		echo "write_uboot_platform_ufs: no idbloader.img + u-boot.itb pair in $1; board hook must override."
-		exit 1
+		return 1
 	fi
 }
 
+# $5: the image to write. armbian-install selects it from BOOTLOADER_MTD_IMAGE(_SATA).
+# Without $5, write the only image, or ask in a dialog.
 write_uboot_platform_mtd() {
-	FILES=$(find "$1" -maxdepth 1 -type f \( -name "rkspi_loader*.img" -o -name "u-boot-rockchip-spi*.bin" \))
+	if [[ -n "${5:-}" ]]; then
+		FILES="$5"
+	else
+		FILES=$(find "$1" -maxdepth 1 -type f \( -name "rkspi_loader*.img" -o -name "u-boot-rockchip-spi*.bin" \))
+	fi
 	if [ -z "$FILES" ]; then
 		echo "No SPI image found."
 		exit 1
@@ -531,12 +537,4 @@ function post_family_config__900_late_default_serial_console_by_branch() {
 	esac
 
 	display_alert "rockchip64_common: defaulting SERIALCON" "final SERIALCON: '${SERIALCON}' for BRANCH='${BRANCH}' SOC='${BOOT_SOC}'" "debug"
-}
-
-# A late hook to put the board prefixes (OVERLAY_PREFIX_BOARD) before the family prefixes.
-# A prefix that matches no overlay in the kernel of the current BRANCH does no harm.
-function post_family_config__910_overlay_prefix_board() {
-	[[ -n "${OVERLAY_PREFIX_BOARD}" ]] || return 0
-	declare -g OVERLAY_PREFIX="${OVERLAY_PREFIX_BOARD} ${OVERLAY_PREFIX}"
-	display_alert "rockchip64_common: overlay prefixes" "OVERLAY_PREFIX='${OVERLAY_PREFIX}'" "debug"
 }

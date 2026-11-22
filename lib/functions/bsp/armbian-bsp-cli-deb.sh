@@ -402,16 +402,9 @@ function board_side_bsp_cli_preinst() {
 	# fixing ramdisk corruption when using lz4 compression method
 	sed -i "s/^COMPRESS=.*/COMPRESS=gzip/" /etc/initramfs-tools/initramfs.conf
 
-	# swap
-	grep -q vm.swappiness /etc/sysctl.conf
-	case $? in
-		0)
-			sed -i 's/vm\.swappiness.*/vm.swappiness=100/' /etc/sysctl.conf
-			;;
-		*)
-			echo vm.swappiness=100 >> /etc/sysctl.conf
-			;;
-	esac
+	# Older BSP versions forced swappiness here. /etc/sysctl.conf is applied last and
+	# overrides the tuning profile, so remove that line. 55-bsp-default.conf has the fallback.
+	[[ -f /etc/sysctl.conf ]] && sed -i '/^[[:space:]]*vm\.swappiness[[:space:]]*=[[:space:]]*100[[:space:]]*$/d' /etc/sysctl.conf
 	# --system (not -p) so the change to /etc/sysctl.conf above *and* the
 	# drop-ins under /usr/lib/sysctl.d (our 55-bsp-default.conf) are applied on
 	# upgrade; -p reads only /etc/sysctl.conf and would leave them to next boot.
@@ -479,6 +472,7 @@ function board_side_bsp_cli_postrm() { # not run here
 		systemctl disable armbian-hardware-monitor.service armbian-hardware-optimize.service > /dev/null 2>&1
 		systemctl disable armbian-zram-config.service armbian-ramlog.service > /dev/null 2>&1
 		systemctl disable armbian-live-patch.service > /dev/null 2>&1
+		update-alternatives --remove newt-palette /etc/newt/palette.armbian > /dev/null 2>&1 || true
 	fi
 }
 
@@ -496,6 +490,9 @@ function board_side_bsp_cli_postinst_base() {
 	if [[ -n "$(grep -w '^ENABLED=false' /etc/default/log2ram 2> /dev/null)" ]]; then
 		sed -i "s/^ENABLED=.*/ENABLED=false/" /etc/default/armbian-ramlog
 	fi
+
+	# libnewt before 0.52.25 (bookworm, noble) reads /etc/newt/palette. Put Armbian colors above Ubuntu magenta (50).
+	update-alternatives --install /etc/newt/palette newt-palette /etc/newt/palette.armbian 60 > /dev/null 2>&1 || true
 
 	# fix boot delay "waiting for suspend/resume device"
 	if [[ -f "/etc/initramfs-tools/initramfs.conf" ]]; then
@@ -539,7 +536,7 @@ function board_side_bsp_cli_postinst_finish() {
 	fi
 
 	# Reload services
-	systemctl --no-reload enable armbian-hardware-monitor.service armbian-hardware-optimize.service armbian-zram-config.service armbian-led-state.service > /dev/null 2>&1
+	systemctl --no-reload enable armbian-hardware-monitor.service armbian-hardware-optimize.service armbian-zram-config.service armbian-led-state.service armbian-console-loglevel.service > /dev/null 2>&1
 }
 
 # Helper to add files, from stdin, to the bsp-cli package.

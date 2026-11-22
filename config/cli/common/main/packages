@@ -27,6 +27,7 @@ linux-base
 lsof
 man-db
 mmc-utils
+mtd-utils
 ncurses-term
 nano
 openssh-server
@@ -45,3 +46,4 @@ wget
 wireguard-tools
 wireless-regdb
 wpasupplicant
+zstd
