@@ -101,7 +101,7 @@ jobs:
           ./AmlImg unpack "$(ls output/images/*.burn.img | head -1)" verify/
           echo "===== commands.txt ====="; cat verify/commands.txt
           echo "===== files ====="; ls -l verify/
-          echo "===== aml_sdc_burn.ini ====="; cat verify/aml_sdc_burn.ini
+          echo "===== aml_sdc_burn.ini ====="; cat verify/*aml_sdc_burn.ini
           echo "===== rootfs sparse size ====="; stat -c '%n %s' verify/*rootfs*
 
       - name: Compress for release
@@ -134,3 +134,4 @@ jobs:
           path: output/images/*.burn.img*
           retention-days: 30
           if-no-files-found: warn
+
