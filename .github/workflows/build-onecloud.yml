@@ -68,8 +68,9 @@ jobs:
           ls -l burn/
           # 关掉"刷前擦除 bootloader"：擦除瞬间的浪涌电流会触发 USB 过流保护(0x00101004)。
           # 包里本来就带 bootloader.PARTITION，写一遍等于覆盖，不需要先擦。
-          sed -i 's/^erase_bootloader.*/erase_bootloader    = 0/' burn/aml_sdc_burn.ini
-          echo "--- ini after patch ---"; cat burn/aml_sdc_burn.ini
+          # AmlImg 解出来的文件名带序号前缀（2.aml_sdc_burn.ini），所以用通配符匹配
+          sed -i 's/^erase_bootloader.*/erase_bootloader    = 0/' burn/*aml_sdc_burn.ini
+          echo "--- ini after patch ---"; cat burn/*aml_sdc_burn.ini
 
       - name: Convert boot and rootfs to sparse
         run: |
