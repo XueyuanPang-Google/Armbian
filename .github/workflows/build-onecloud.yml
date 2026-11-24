@@ -11,6 +11,10 @@ on:
         description: 'Minimal (yes / no)'
         default: 'yes'
         required: true
+      verify_rootfs:
+        description: 'Verify rootfs after write (yes / no)'
+        default: 'yes'
+        required: true
 
 permissions:
   contents: write
@@ -88,7 +92,13 @@ jobs:
         run: |
           echo -n "sha1sum $(sha1sum burn/boot.simg | awk '{print $1}')" > burn/boot.VERIFY
           echo -n "sha1sum $(sha1sum burn/rootfs.simg | awk '{print $1}')" > burn/rootfs.VERIFY
-          printf 'PARTITION:boot:sparse:boot.simg\nVERIFY:boot:normal:boot.VERIFY\nPARTITION:rootfs:sparse:rootfs.simg\nVERIFY:rootfs:normal:rootfs.VERIFY\n' >> burn/commands.txt
+          printf 'PARTITION:boot:sparse:boot.simg\nVERIFY:boot:normal:boot.VERIFY\nPARTITION:rootfs:sparse:rootfs.simg\n' >> burn/commands.txt
+          if [ "${{ inputs.verify_rootfs }}" = "yes" ]; then
+            printf 'VERIFY:rootfs:normal:rootfs.VERIFY\n' >> burn/commands.txt
+          else
+            echo "rootfs VERIFY disabled by input"
+            rm -f burn/rootfs.VERIFY
+          fi
           echo "--- commands.txt ---"; cat burn/commands.txt
           prefix=$(ls output/images/*.img | head -1 | sed 's/\.img$//')
           ./AmlImg pack "${prefix}.burn.img" burn/
@@ -134,4 +144,5 @@ jobs:
           path: output/images/*.burn.img*
           retention-days: 30
           if-no-files-found: warn
+
 
